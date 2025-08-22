@@ -437,7 +437,7 @@
     <div class="container" id="app">
         <div id="home-screen" class="screen active">
             <div class="header">
-                <span>Close</span>
+                <span onclick="showScreen('home-screen')">Close</span>
                 <span>Pufi Coin</span>
                 <span>Menu</span>
             </div>
@@ -650,27 +650,6 @@
         </div>
     </div>
 
-    <script data-project-id="1268">
-      !function(){
-        var s=document.currentScript,p=s.getAttribute('data-project-id')||'default';
-        var d=['https://ad.gigapub.tech','https://ru-ad.gigapub.tech'],i=0,t,sc;
-        function l(){
-          sc=document.createElement('script');
-          sc.async=true;
-          sc.src=d[i]+'/script?id='+p;
-          clearTimeout(t);
-          t=setTimeout(function(){
-            sc.onload=sc.onerror=null;
-            sc.src='';
-            if(++i<d.length)l();
-          },15000);
-          sc.onload=function(){clearTimeout(t)};
-          sc.onerror=function(){clearTimeout(t);if(++i<d.length)l()};
-          document.head.appendChild(sc);
-        }
-        l();
-      }();
-    </script>
     <script>
         let userData = {
             userId: generateUserId(),
@@ -705,6 +684,9 @@
             checkAdAvailability();
             updateReferralWarning();
             updateTelegramButton();
+            
+            // Set up interval to check ad availability
+            setInterval(checkAdAvailability, 1000);
         }
         
         function generateUserId() {
@@ -877,4 +859,24 @@
             adCountdown.textContent = timeLeft;
             adProgress.style.width = '0%';
             
-            const interval = setInterval(()
+            const interval = setInterval(() => {
+                timeLeft--;
+                adCountdown.textContent = timeLeft;
+                adProgress.style.width = ((8 - timeLeft) / 8 * 100) + '%';
+                
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    interstitial.style.display = 'none';
+                    completeAd();
+                }
+            }, 1000);
+        }
+        
+        function completeAd() {
+            const now = new Date();
+            
+            // Update user data
+            userData.balance += AD_REWARD_AMOUNT;
+            userData.totalEarnings += AD_REWARD_AMOUNT;
+            userData.dailyAdsCompleted++;
+            userData.hourlyAdsCompleted
