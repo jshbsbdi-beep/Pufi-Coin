@@ -1115,8 +1115,8 @@
         const ADS_PER_DAY_LIMIT = 20; 
         const POINTS_PER_AD = 6; 
         const DAILY_LOGIN_BONUS = 5; 
-        const MIN_WITHDRAW_POINTS = 720; // UPDATED per user request (from 600)
-        const ONE_TIME_BONUS_AMOUNT = 100; // NEW per user request
+        const MIN_WITHDRAW_POINTS = 720; // Changed from 600 to 720
+        const ONE_TIME_BONUS_AMOUNT = 100; // 100 Taka one-time bonus for ALL users
         const REFERRAL_BONUS_REFERRER = 10;
         const REFERRAL_BONUS_REFEREE = 5;
         const WITHDRAWAL_REFERRAL_COUNT = 10; 
@@ -1131,11 +1131,12 @@
 
         // Enhanced Data Storage Keys
         const STORAGE_KEYS = {
-            ALL_USERS: 'cashMoneyAllUsers_v2',
-            DEVICE_ID: 'cashMoneyDeviceId_v2',
-            THEME: 'cashMoneyTheme_v2',
-            BACKUP: 'cashMoneyBackup_v2',
-            OLD_CURRENT_USER: 'currentUser' // Key for old, simple storage
+            ALL_USERS: 'cashMoneyAllUsers_v3', // Updated version
+            DEVICE_ID: 'cashMoneyDeviceId_v3',
+            THEME: 'cashMoneyTheme_v3',
+            BACKUP: 'cashMoneyBackup_v3',
+            ONE_TIME_BONUS_GIVEN: 'cashMoneyOneTimeBonusGiven_v3', // Track bonus given
+            OLD_CURRENT_USER: 'currentUser'
         };
 
         // DOM Elements
@@ -1176,11 +1177,11 @@
             referredUsers: [],
             deviceId: '',
             lastUpdated: null,
-            backupVersion: '2.1', // UPDATED version to reflect new logic
-            oneTimeBonusClaimed: false // NEW field for one-time bonus
+            backupVersion: '3.0'
         };
 
         let initialLoadFlag = false;
+        let isSaving = false;
 
         // Show toast notification
         function showToast(message, duration = 3000) {
@@ -1193,7 +1194,7 @@
 
         // Show data save notification
         function showDataSaveNotice() {
-            if (initialLoadFlag) { // Only show after initial load
+            if (initialLoadFlag) {
                 dataSaveNotice.classList.add('show');
                 setTimeout(() => {
                     dataSaveNotice.classList.remove('show');
@@ -1206,7 +1207,6 @@
             const timestamp = Date.now().toString(36);
             const random = Math.random().toString(36).substring(2, 15);
             const newId = `cm_${timestamp}_${random}`.toUpperCase();
-            // Ensure the new ID is saved immediately
             localStorage.setItem(STORAGE_KEYS.DEVICE_ID, newId);
             return newId;
         }
@@ -1223,33 +1223,39 @@
 
         // Enhanced Data Storage with backup system
         function saveUserState() {
+            if (isSaving) return;
+            
             try {
+                isSaving = true;
                 const deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
-                if (!deviceId) return;
+                if (!deviceId) {
+                    isSaving = false;
+                    return false;
+                }
 
                 let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
                 
-                // Update user data with timestamp
                 currentUser.lastUpdated = new Date().toISOString();
                 currentUser.deviceId = deviceId;
                 
-                // Save to main storage
                 allUsersData[deviceId] = currentUser;
                 localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
                 
-                // Create backup
                 const backup = {
                     ...currentUser,
                     backupTimestamp: new Date().toISOString()
                 };
                 localStorage.setItem(STORAGE_KEYS.BACKUP, JSON.stringify(backup));
                 
-                // Show save notification
-                showDataSaveNotice();
+                if (initialLoadFlag) {
+                    showDataSaveNotice();
+                }
+                isSaving = false;
                 return true;
             } catch (error) {
                 console.error('Error saving user state:', error);
                 showToast('Error saving data');
+                isSaving = false;
                 return false;
             }
         }
@@ -1260,44 +1266,62 @@
                 // 1. Get Device ID or create a new one
                 let deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
                 if (!deviceId) {
-                    deviceId = generateDeviceId(); // generateDeviceId now saves it immediately
+                    deviceId = generateDeviceId();
                 }
 
                 let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
                 let userFound = false;
+                let migratedFromOld = false;
 
                 // 2. Check for existing user in ALL_USERS
                 if (allUsersData[deviceId]) {
                     currentUser = allUsersData[deviceId];
                     userFound = true;
                 } else {
-                    // 3. ATTEMPT DATA MIGRATION from old simple storage (currentUser key)
-                    const oldUserDataRaw = localStorage.getItem(STORAGE_KEYS.OLD_CURRENT_USER);
-                    if (oldUserDataRaw) {
-                        try {
-                            const oldUser = JSON.parse(oldUserDataRaw);
-                            if (oldUser && oldUser.points !== undefined) {
-                                currentUser = {
-                                    ...currentUser, // Default structure
-                                    ...oldUser,     // Overwrite with old data
-                                    deviceId: deviceId,
-                                    referralCode: oldUser.referralCode || generateReferralCode(),
-                                    backupVersion: '2.1', // UPDATED migration version
-                                    lastUpdated: new Date().toISOString()
-                                };
-                                allUsersData[deviceId] = currentUser;
-                                localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
-                                localStorage.removeItem(STORAGE_KEYS.OLD_CURRENT_USER); // Clean up old key
-                                userFound = true;
-                                showToast('Previous data successfully loaded and upgraded!', 5000);
+                    // 3. ATTEMPT DATA MIGRATION from v2 storage
+                    const v2Key = 'cashMoneyAllUsers_v2';
+                    const v2Data = JSON.parse(localStorage.getItem(v2Key));
+                    if (v2Data && v2Data[deviceId]) {
+                        currentUser = {
+                            ...v2Data[deviceId],
+                            backupVersion: '3.0',
+                            lastUpdated: new Date().toISOString()
+                        };
+                        allUsersData[deviceId] = currentUser;
+                        localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
+                        userFound = true;
+                        migratedFromOld = true;
+                        showToast('Data migrated to new version!', 5000);
+                    } else {
+                        // 4. ATTEMPT DATA MIGRATION from old simple storage
+                        const oldUserDataRaw = localStorage.getItem(STORAGE_KEYS.OLD_CURRENT_USER);
+                        if (oldUserDataRaw) {
+                            try {
+                                const oldUser = JSON.parse(oldUserDataRaw);
+                                if (oldUser && oldUser.points !== undefined) {
+                                    currentUser = {
+                                        ...currentUser,
+                                        ...oldUser,
+                                        deviceId: deviceId,
+                                        referralCode: oldUser.referralCode || generateReferralCode(),
+                                        backupVersion: '3.0',
+                                        lastUpdated: new Date().toISOString()
+                                    };
+                                    allUsersData[deviceId] = currentUser;
+                                    localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
+                                    localStorage.removeItem(STORAGE_KEYS.OLD_CURRENT_USER);
+                                    userFound = true;
+                                    migratedFromOld = true;
+                                    showToast('Previous data successfully upgraded!', 5000);
+                                }
+                            } catch (e) {
+                                console.warn("Old data migration failed, starting fresh.", e);
                             }
-                        } catch (e) {
-                            console.warn("Old data migration failed, starting fresh.", e);
                         }
                     }
                 }
                 
-                // 4. Create new user if none found (New or migrated)
+                // 5. Create new user if none found
                 if (!userFound) {
                     const defaultUser = {
                         name: 'Guest User',
@@ -1314,11 +1338,9 @@
                         referredUsers: [],
                         deviceId: deviceId,
                         lastUpdated: new Date().toISOString(),
-                        backupVersion: '2.1',
-                        oneTimeBonusClaimed: false
+                        backupVersion: '3.0'
                     };
                     
-                    // Populate with Telegram data if available
                     if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
                         const tgUser = Telegram.WebApp.initDataUnsafe.user;
                         defaultUser.telegramId = tgUser.id;
@@ -1330,53 +1352,45 @@
                     localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
                 }
 
+                // 6. Apply 100 Taka one-time bonus to ALL users (new and old)
+                const bonusGivenKey = STORAGE_KEYS.ONE_TIME_BONUS_GIVEN;
+                const hasReceivedBonus = localStorage.getItem(bonusGivenKey) === 'true';
+                
+                if (!hasReceivedBonus) {
+                    currentUser.points += ONE_TIME_BONUS_AMOUNT;
+                    localStorage.setItem(bonusGivenKey, 'true');
+                    showToast(`🎉 Special Bonus! +৳ ${ONE_TIME_BONUS_AMOUNT} added to your account!`, 5000);
+                    console.log("100 Taka bonus applied to user");
+                }
 
-                // 5. Update Telegram data if user data existed but was outdated
+                // 7. Update Telegram data if needed
                 if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
                     const tgUser = Telegram.WebApp.initDataUnsafe.user;
                     if (!currentUser.telegramId || currentUser.telegramId !== tgUser.id || !currentUser.photoUrl.startsWith('https://')) {
                         currentUser.telegramId = tgUser.id;
                         currentUser.name = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || currentUser.name;
                         currentUser.photoUrl = tgUser.photo_url || currentUser.photoUrl;
-                        saveUserState();
                     }
                 }
 
-                // 6. Handle ONE-TIME BONUS (NEW LOGIC)
-                if (currentUser.oneTimeBonusClaimed === false) {
-                    currentUser.points += ONE_TIME_BONUS_AMOUNT;
-                    currentUser.oneTimeBonusClaimed = true;
-                    saveUserState();
-                    showToast(`+৳ ${ONE_TIME_BONUS_AMOUNT} One-Time Joining Bonus!`);
-                }
-                // Handle older user data that might be missing the field
-                if (currentUser.oneTimeBonusClaimed === undefined) {
-                    currentUser.oneTimeBonusClaimed = true; // Assume claimed if points are already high, or simply avoid a second claim
-                    saveUserState();
-                }
-
-
-                // 7. Handle daily login bonus
+                // 8. Handle daily login bonus
                 const today = new Date().toLocaleDateString();
                 if (currentUser.lastLoginDate !== today) {
                     currentUser.points += DAILY_LOGIN_BONUS;
                     currentUser.lastLoginDate = today;
-                    saveUserState();
                     showToast(`+৳ ${DAILY_LOGIN_BONUS} Daily Login Bonus!`);
                 }
 
-                // 8. Reset daily ad count if date has changed
+                // 9. Reset daily ad count if date has changed
                 if (currentUser.lastAdWatchDate !== today) {
                     currentUser.adsWatchedToday = 0;
                     currentUser.lastAdWatchDate = today;
-                    saveUserState();
                 }
 
-                // 9. Handle referral from URL
+                // 10. Handle referral from URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const refCodeFromUrl = urlParams.get('start') || urlParams.get('ref');
                 if (refCodeFromUrl && !currentUser.referredBy && refCodeFromUrl !== currentUser.referralCode) {
-                    // Reload allUsersData to check for referrer
                     const latestAllUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
                     const referrerExists = Object.values(latestAllUsersData).some(user => user.referralCode === refCodeFromUrl);
                     if (referrerExists) {
@@ -1384,7 +1398,10 @@
                     }
                 }
 
-                // 10. Final UI Update
+                // 11. Save the updated user state immediately
+                saveUserState();
+
+                // 12. Final UI Update
                 if (currentUser.photoUrl) {
                     profilePic.src = currentUser.photoUrl;
                 }
@@ -1395,7 +1412,6 @@
             } catch (error) {
                 console.error('CRITICAL: Error loading user state:', error);
                 
-                // Try to recover from backup
                 try {
                     const backup = JSON.parse(localStorage.getItem(STORAGE_KEYS.BACKUP));
                     if (backup) {
@@ -1409,7 +1425,7 @@
                     console.error('Backup recovery failed:', backupError);
                 }
                 
-                showToast('Error loading data! Restarting...', 5000);
+                showToast('Error loading data! Starting fresh...', 5000);
                 initialLoadFlag = true;
                 return false;
             }
@@ -1428,7 +1444,6 @@
                 currentUser.points += REFERRAL_BONUS_REFEREE;
                 currentUser.referredBy = referrerCode;
 
-                // Ensure referrerUser is the latest version from storage
                 const referrerDeviceId = Object.keys(allUsersData).find(id => allUsersData[id].referralCode === referrerCode);
                 const latestReferrerUser = allUsersData[referrerDeviceId];
 
@@ -1436,19 +1451,18 @@
                 if (!latestReferrerUser.referredUsers) {
                     latestReferrerUser.referredUsers = [];
                 }
-                // Only push if not already referred (to prevent duplicate entries from multiple loads)
                 if (!latestReferrerUser.referredUsers.includes(currentUser.referralCode)) {
                     latestReferrerUser.referredUsers.push(currentUser.referralCode);
                 }
                 
                 allUsersData[referrerDeviceId] = latestReferrerUser;
                 localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
-                saveUserState(); // Save current user state as well
+                saveUserState();
                 showToast(`+৳ ${REFERRAL_BONUS_REFEREE} bonus for joining via referral!`);
                 sendTelegramReferralNotification(
                     currentUser.name,
                     currentUser.referralCode,
-                    latestReferrerUser.name || 'Unknown Referrer', // Fallback name
+                    latestReferrerUser.name,
                     referrerCode
                 );
                 updateUI();
@@ -1457,7 +1471,6 @@
 
         // Initialize the app with enhanced loading
         document.addEventListener('DOMContentLoaded', () => {
-            // Start loading progress
             let progress = 0;
             const progressInterval = setInterval(() => {
                 progress += 20;
@@ -1466,28 +1479,22 @@
                 if (progress >= 100) {
                     clearInterval(progressInterval);
                     
-                    // Fade out loading page
                     loadingPage.style.opacity = '0';
                     setTimeout(() => {
                         loadingPage.style.display = 'none';
                         appContainer.style.display = 'block';
                         
-                        // Initialize Telegram WebApp
                         if (window.Telegram && Telegram.WebApp) {
                             Telegram.WebApp.expand();
                             Telegram.WebApp.enableClosingConfirmation();
                         }
                         
-                        // Load user data
                         loadUserState();
                         
-                        // Apply theme
                         applyTheme(localStorage.getItem(STORAGE_KEYS.THEME) || 'light');
                         
-                        // Navigate to home
                         navigateTo('home');
                         
-                        // Set up event listeners
                         themeToggleBtn.addEventListener('click', toggleTheme);
                         document.getElementById('editNameBtn').addEventListener('click', promptForNewName);
                         bottomNavItems.forEach(item => {
@@ -1501,37 +1508,11 @@
                         
                         // Auto-save every 30 seconds
                         setInterval(saveUserState, 30000);
-
-                        // Save on important events
-                        setupCriticalSaveEvents();
                         
                     }, 500);
                 }
-            }, 500); // Total 2.5 seconds loading for faster user experience
+            }, 500);
         });
-
-        // NEW: Setup function for critical save events
-        function setupCriticalSaveEvents() {
-            // Save data when user leaves/closes the tab
-            window.addEventListener('beforeunload', function(e) {
-                saveUserState();
-                // Note: Telegram WebApp handles save on close better via its own methods, but this is a fallback.
-            });
-
-            // Save data when app goes to background (for mobile/TWA)
-            document.addEventListener('visibilitychange', function() {
-                if (document.hidden) {
-                    saveUserState();
-                }
-            });
-            
-            if (window.Telegram && Telegram.WebApp) {
-                // Use Telegram's own method for data synchronization (recommended)
-                Telegram.WebApp.onEvent('mainButton.click', saveUserState); 
-                Telegram.WebApp.onEvent('backButton.click', saveUserState);
-                Telegram.WebApp.onEvent('viewportChanged', saveUserState);
-            }
-        }
 
         // Theme management
         function applyTheme(theme) {
@@ -1554,7 +1535,6 @@
                 </button>
             `;
             
-            // Re-attach event listener
             const newEditBtn = document.getElementById('editNameBtn');
             if (newEditBtn) newEditBtn.addEventListener('click', promptForNewName);
 
@@ -1604,7 +1584,7 @@
             updateUI();
         }
 
-        // Page renderers (same as before, but updated to use new storage system)
+        // Page renderers
         function renderHomePage() {
             mainContent.innerHTML = `
                 <div class="task-card">
@@ -1775,17 +1755,14 @@
             const referredUsersCount = currentUser.referredUsers ? currentUser.referredUsers.length : 0;
 
             let referredUsersListHtml = '';
-            // Reload all users data to display latest names
-            const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
-
             if (referredUsersCount > 0) {
                 referredUsersListHtml = `
                     <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--text-secondary);">Your Referrals (${referredUsersCount})</h3>
                     <div class="referred-users">`;
-                
+                const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
                 currentUser.referredUsers.forEach(refCode => {
                     const referredUser = Object.values(allUsersData).find(user => user.referralCode === refCode);
-                    const name = (referredUser && referredUser.name) ? referredUser.name : `User ${refCode}`;
+                    const name = referredUser ? referredUser.name : `User ${refCode}`;
                     referredUsersListHtml += `
                         <div class="user-item">
                             <div class="user-avatar">
@@ -2102,13 +2079,12 @@
             .then(response => response.json())
             .then(data => {
                 if (!data.ok) {
-                    // Try sending without MarkdownV2 if the first attempt fails (common for escape issues)
                     fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             chat_id: TELEGRAM_CHAT_ID,
-                            text: message.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '') // Remove all markdown for plain text
+                            text: message.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '')
                         })
                     });
                 }
@@ -2151,6 +2127,36 @@ Referral From:
             })
             .catch(error => console.error('Error sending referral Telegram message:', error));
         }
+
+        // Add beforeunload event to save data when user leaves
+        window.addEventListener('beforeunload', function(e) {
+            if (!isSaving) {
+                saveUserState();
+            }
+        });
+
+        // Add visibility change event to save data when app goes to background
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                if (!isSaving) {
+                    saveUserState();
+                }
+            }
+        });
+
+        // Add pagehide event for mobile browsers
+        window.addEventListener('pagehide', function() {
+            if (!isSaving) {
+                saveUserState();
+            }
+        });
+
+        // Add unload event as additional safety
+        window.addEventListener('unload', function() {
+            if (!isSaving) {
+                saveUserState();
+            }
+        });
 
         // Expose functions to global scope for onclick handlers
         window.handleBonusLinkClick = handleBonusLinkClick;
