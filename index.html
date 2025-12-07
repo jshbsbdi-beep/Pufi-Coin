@@ -123,6 +123,10 @@
             transition: opacity 0.5s ease-out;
             color: var(--primary-color);
         }
+        body.dark-mode #loadingPage {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+        }
 
         .loading-spinner {
             border: 5px solid #f3f3f3; /* Light grey */
@@ -132,6 +136,9 @@
             height: 50px;
             animation: loadspin 1s linear infinite;
             margin-bottom: 20px;
+        }
+        body.dark-mode .loading-spinner {
+             border: 5px solid var(--border-color-dark);
         }
 
         @keyframes loadspin {
@@ -928,7 +935,7 @@
 <body>
     <div id="loadingPage">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Loading App... Please Wait (6s)</div>
+        <div class="loading-text">Loading App... Please Wait (2s)</div>
     </div>
     <div class="app-container" style="display: none;">
         <div class="header">
@@ -1007,8 +1014,8 @@
     </div>
 
     <script>
-        // Configuration (Updated as per request)
-        const APP_NAME = "𝖢𝖺𝗌𝗁 𝗆𝗈𝗇𝖾𝗒 💴"; // 🟢 Updated App Name
+        // Configuration
+        const APP_NAME = "𝖢𝖺𝗌𝗁 𝗆𝗈𝗇𝖾𝗒 💴";
         const ADS_PER_DAY_LIMIT = 20; 
         const POINTS_PER_AD = 6; 
         const DAILY_LOGIN_BONUS = 5; 
@@ -1019,14 +1026,16 @@
         const GIGAPUB_PROJECT_ID = '4724'; 
         const TELEGRAM_BOT_TOKEN = "7354534121:AAHssrmmk3zam5STFXWnOjNRqKyexOjXvmE"; 
         const TELEGRAM_CHAT_ID = "-1002783990004"; 
-        const REFERRAL_BOT_LINK = "https://t.me/quick_earn_01_bot"; // 🟢 Updated Referral Link
+        const REFERRAL_BOT_LINK = "https://t.me/quick_earn_01_bot";
+        
+        // **NEW** Storage Key for better data isolation
+        const STORAGE_KEY_USERS = 'cashMoneyAllUsersData';
+        const STORAGE_KEY_DEVICE_ID = 'cashMoneyDeviceId';
+        const STORAGE_KEY_THEME = 'cashMoneyTheme';
 
-        // Removed all specific links for developer/channel as requested, will use '#' or null
-        const DEVELOPER_PROFILE_LINK = "#"; 
+        // Links
         const OFFICIAL_CHANNEL_LINK = "https://t.me/moneyhostes"; 
-        const SUPPORT_GROUP_LINK = "#"; 
         const BONUS_CHANNELS = [
-            // 🟢 Only the required task remains
             { id: 'tg_official_channel', name: 'Official Channel (Task 1)', link: OFFICIAL_CHANNEL_LINK, reward: 15, icon: 'fab fa-telegram-plane' }
         ];
 
@@ -1075,7 +1084,7 @@
             }, duration);
         }
 
-        // Generate a unique device ID for each user
+        // Generate a unique device ID
         function generateDeviceId() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                 const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -1090,36 +1099,47 @@
 
         // Load user state from localStorage or Telegram WebApp
         function loadUserState() {
-            let deviceId = localStorage.getItem('galaxyEarnDeviceId');
+            let deviceId = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
             if (!deviceId) {
                 deviceId = generateDeviceId();
-                localStorage.setItem('galaxyEarnDeviceId', deviceId);
+                localStorage.setItem(STORAGE_KEY_DEVICE_ID, deviceId);
             }
 
-            let allUsersData = JSON.parse(localStorage.getItem('galaxyEarnAllUsers')) || {};
+            let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS)) || {};
+            const tgUser = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user;
+            
+            let userToLoad = allUsersData[deviceId];
+            let existingUserByTgId = tgUser ? Object.values(allUsersData).find(user => user.telegramId === tgUser.id) : null;
+            let existingDeviceIdForTgUser = existingUserByTgId ? Object.keys(allUsersData).find(id => allUsersData[id].telegramId === tgUser.id) : null;
 
-            if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
-                const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                const existingUser = Object.values(allUsersData).find(user => user.telegramId === tgUser.id);
-
-                if (existingUser) {
-                    currentUser = existingUser;
-                    const existingDeviceIdForTgUser = Object.keys(allUsersData).find(id => allUsersData[id].telegramId === tgUser.id);
+            if (tgUser) {
+                if (existingUserByTgId) {
+                    // Case 1: Existing Telegram user found (possibly on a new/different device ID)
                     if (existingDeviceIdForTgUser && existingDeviceIdForTgUser !== deviceId) {
-                         localStorage.setItem('galaxyEarnDeviceId', existingDeviceIdForTgUser);
-                         deviceId = existingDeviceIdForTgUser;
-                         currentUser = allUsersData[deviceId];
-                    } else {
-                        Object.assign(currentUser, {
-                            name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || currentUser.name,
-                            photoUrl: tgUser.photo_url || currentUser.photoUrl,
-                            telegramId: tgUser.id
-                        });
-                        allUsersData[deviceId] = currentUser;
-                        localStorage.setItem('galaxyEarnAllUsers', JSON.stringify(allUsersData));
+                        // Use the correct deviceId linked to this Telegram user and update the current local storage ID
+                        localStorage.setItem(STORAGE_KEY_DEVICE_ID, existingDeviceIdForTgUser);
+                        deviceId = existingDeviceIdForTgUser;
+                        userToLoad = existingUserByTgId;
                     }
-                } else {
-                    currentUser = {
+                    
+                    // Update user details from Telegram (name, photo)
+                    Object.assign(userToLoad, {
+                        name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || userToLoad.name,
+                        photoUrl: tgUser.photo_url || userToLoad.photoUrl,
+                        telegramId: tgUser.id
+                    });
+
+                } else if (userToLoad && userToLoad.telegramId === null) {
+                    // Case 2: Existing Guest User on this device ID, now linking to Telegram
+                     Object.assign(userToLoad, {
+                        name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || userToLoad.name,
+                        photoUrl: tgUser.photo_url || userToLoad.photoUrl,
+                        telegramId: tgUser.id
+                    });
+
+                } else if (!userToLoad || userToLoad.telegramId !== tgUser.id) {
+                    // Case 3: Brand new Telegram user (or first time on this device ID)
+                    userToLoad = {
                         name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || `User${tgUser.id}`,
                         telegramId: tgUser.id,
                         photoUrl: tgUser.photo_url || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
@@ -1133,12 +1153,11 @@
                         referredBy: null,
                         referredUsers: []
                     };
-                    allUsersData[deviceId] = currentUser;
-                    localStorage.setItem('galaxyEarnAllUsers', JSON.stringify(allUsersData));
                 }
             } else {
-                if (!allUsersData[deviceId]) {
-                    allUsersData[deviceId] = {
+                // Case 4: Not in Telegram WebApp (Guest User)
+                if (!userToLoad) {
+                    userToLoad = {
                         name: 'Guest User',
                         telegramId: null,
                         photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
@@ -1152,10 +1171,13 @@
                         referredBy: null,
                         referredUsers: []
                     };
-                    localStorage.setItem('galaxyEarnAllUsers', JSON.stringify(allUsersData));
                 }
-                currentUser = allUsersData[deviceId];
             }
+            
+            currentUser = userToLoad;
+            allUsersData[deviceId] = currentUser;
+            localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(allUsersData));
+
 
             if (currentUser.photoUrl) {
                 profilePic.src = currentUser.photoUrl;
@@ -1198,7 +1220,7 @@
                 return;
             }
 
-            let allUsersData = JSON.parse(localStorage.getItem('galaxyEarnAllUsers')) || {};
+            let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS)) || {};
             const referrerUser = Object.values(allUsersData).find(user => user.referralCode === referrerCode);
 
             if (referrerUser) {
@@ -1215,9 +1237,9 @@
                 const referrerDeviceId = Object.keys(allUsersData).find(id => allUsersData[id].referralCode === referrerCode);
                 if (referrerDeviceId) {
                     allUsersData[referrerDeviceId] = referrerUser;
+                    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(allUsersData));
                 }
 
-                localStorage.setItem('galaxyEarnAllUsers', JSON.stringify(allUsersData));
                 showToast(`+৳ ${REFERRAL_BONUS_REFEREE} bonus Taka for joining via referral!`);
                 sendTelegramReferralNotification(
                     currentUser.name,
@@ -1234,7 +1256,7 @@
 
         // Initialize the app
         document.addEventListener('DOMContentLoaded', () => {
-             // 6-second loading screen
+             // 2-second loading screen
             setTimeout(() => {
                 loadingPage.style.opacity = '0';
                 setTimeout(() => {
@@ -1247,7 +1269,7 @@
                     Telegram.WebApp.enableClosingConfirmation();
                 }
                 loadUserState();
-                applyTheme(localStorage.getItem('galaxyEarnTheme') || 'light'); // Default to light mode for "normal"
+                applyTheme(localStorage.getItem(STORAGE_KEY_THEME) || 'light'); 
 
                 navigateTo('home');
 
@@ -1261,14 +1283,14 @@
                     });
                 });
                 adCloseBtn.addEventListener('click', closeAdModalAndReward);
-            }, 6000); // 6 seconds
+            }, 2000); // Reduced to 2 seconds
         });
 
         // Theme management
         function applyTheme(theme) {
             document.body.classList.toggle('dark-mode', theme === 'dark');
             themeToggleBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-            localStorage.setItem('galaxyEarnTheme', theme);
+            localStorage.setItem(STORAGE_KEY_THEME, theme);
         }
 
         function toggleTheme() {
@@ -1373,7 +1395,6 @@
             const adsLeft = ADS_PER_DAY_LIMIT - currentUser.adsWatchedToday;
             const progressPercent = (currentUser.adsWatchedToday / ADS_PER_DAY_LIMIT) * 100;
             
-            // Removed all old tasks, keeping only the Ad Watch task.
             mainContent.innerHTML = `
                 <div class="task-card">
                     <div class="task-header">
@@ -1408,7 +1429,6 @@
         }
 
         function renderBonusPage() {
-             // Only use the updated BONUS_CHANNELS list
             let channelsHtml = BONUS_CHANNELS.map(channel => {
                 const isClaimed = currentUser.claimedBonuses.includes(channel.id);
                 const linkIsValid = channel.link && channel.link !== '#' && channel.link !== '';
@@ -1511,7 +1531,7 @@
                 referredUsersListHtml = `
                     <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--text-secondary);">Your Referrals (${referredUsersCount})</h3>
                     <div class="referred-users">`;
-                const allUsersData = JSON.parse(localStorage.getItem('galaxyEarnAllUsers')) || {};
+                const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS)) || {};
                 currentUser.referredUsers.forEach(refCode => {
                     const referredUser = Object.values(allUsersData).find(user => user.referralCode === refCode);
                     const name = referredUser ? referredUser.name : `User ${refCode}`;
@@ -1548,387 +1568,4 @@
                         <label class="input-label">Your Referral Link</label>
                         <div class="referral-input-group">
                             <input type="text" id="referralLinkDisplay" class="referral-input" value="${referralLink}" readonly>
-                            <button class="copy-btn" id="copyReferralLinkBtn">Copy</button>
-                        </div>
-                        <button class="btn btn-secondary" id="shareReferralLinkBtn" style="margin-top: 5px; width: 100%;">
-                            <i class="fas fa-share-alt"></i> Share Link
-                        </button>
-                    </div>
-                    <div class="referral-stats">
-                        <div class="stat-card">
-                            <div class="stat-number">৳ ${REFERRAL_BONUS_REFERRER}</div>
-                            <div class="stat-title">Per Referral</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">${referredUsersCount}</div>
-                            <div class="stat-title">Total</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">৳ ${referredUsersCount * REFERRAL_BONUS_REFERRER}</div>
-                            <div class="stat-title">Earned</div>
-                        </div>
-                    </div>
-                    ${referredUsersListHtml}
-                </div>
-                <div class="developer-footer">
-                    Developed by Floki
-                </div>`;
-
-            // Note: The logic for copying/displaying the standalone referral code is removed.
-            
-            document.getElementById('copyReferralLinkBtn').addEventListener('click', () => {
-                const referralLinkInput = document.getElementById('referralLinkDisplay');
-                referralLinkInput.select();
-                document.execCommand('copy');
-                showToast('Referral link copied!');
-            });
-            document.getElementById('shareReferralLinkBtn').addEventListener('click', () => {
-                if (navigator.share) {
-                    navigator.share({
-                        title: `${APP_NAME} - Earn ৳ Taka!`,
-                        text: `Join ${APP_NAME} using my referral link and we both get bonus ৳ Taka!`,
-                        url: referralLink,
-                    }).catch((error) => console.log('Error sharing', error));
-                } else {
-                    const referralLinkInput = document.getElementById('referralLinkDisplay');
-                    referralLinkInput.select();
-                    document.execCommand('copy');
-                    showToast('Link copied! Share it manually.');
-                }
-            });
-        }
-
-        // Ad handling
-        let adWatchedSuccessfully = false;
-        let adRewardPending = false;
-        
-        // Updated Ad logic for GigaPub
-        function handleWatchDailyAd() {
-            const today = new Date().toLocaleDateString();
-            if (currentUser.lastAdWatchDate !== today) {
-                currentUser.adsWatchedToday = 0;
-                currentUser.lastAdWatchDate = today;
-                saveUserState();
-            }
-
-            if (currentUser.adsWatchedToday >= ADS_PER_DAY_LIMIT) {
-                showToast("Daily ad limit reached!");
-                updateUI();
-                return;
-            }
-
-            adWatchedSuccessfully = false;
-            adRewardPending = true;
-            openAdModal("Launching Ad...");
-            adSpinner.style.display = 'block';
-            adCloseBtn.style.display = 'none';
-            adStatusMessage.textContent = "Please wait while we load the ad";
-
-            if (window.showGiga && typeof window.showGiga === 'function') {
-                adModalTitle.textContent = "Ad Playing";
-                adStatusMessage.textContent = "Please watch the full ad to claim your reward";
-                
-                try {
-                    window.showGiga()
-                        .then(() => {
-                            // Ad completed successfully
-                            adWatchedSuccessfully = true;
-                            if (adRewardPending) {
-                                adSpinner.style.display = 'none';
-                                adStatusMessage.textContent = "Ad completed! Close to claim your reward";
-                                adCloseBtn.style.display = 'block';
-                            }
-                        })
-                        .catch(error => {
-                            // Ad failed or was closed early
-                            handleAdError("Ad closed too soon or error occurred. No Taka awarded.");
-                            console.error("GigaPub ad error:", error);
-                        });
-                } catch (error) {
-                    handleAdError("Error launching ad. Please try again.");
-                    console.error("GigaPub execution error:", error);
-                }
-            } else {
-                showToast("Ad service not fully loaded. Simulating ad watch...");
-                adModalTitle.textContent = "Simulating Ad...";
-                adStatusMessage.textContent = "Ad will finish in 5 seconds (simulation).";
-                setTimeout(() => {
-                    if (adRewardPending) {
-                        adSpinner.style.display = 'none';
-                        adStatusMessage.textContent = "Simulated ad completed! Close to claim your reward";
-                        adCloseBtn.style.display = 'block';
-                        adWatchedSuccessfully = true;
-                    }
-                }, 5000);
-            }
-        }
-
-        function handleAdError(errorMessage) {
-            if (adRewardPending) {
-                adSpinner.style.display = 'none';
-                adStatusMessage.textContent = errorMessage;
-                adModalTitle.textContent = "Ad Error";
-                adCloseBtn.textContent = "Close";
-                adCloseBtn.style.display = 'block';
-                adWatchedSuccessfully = false;
-                adRewardPending = false;
-            }
-        }
-
-        function openAdModal(title) {
-            adModalTitle.textContent = title;
-            adCloseBtn.textContent = "Close & Claim Reward";
-            adModal.classList.add('show');
-        }
-
-        function closeAdModalAndReward() {
-            adModal.classList.remove('show');
-            if (adWatchedSuccessfully && adRewardPending) {
-                currentUser.points += POINTS_PER_AD;
-                currentUser.adsWatchedToday++;
-                currentUser.totalAdsWatchedLifetime++;
-                currentUser.lastAdWatchDate = new Date().toLocaleDateString();
-                updateUI();
-                saveUserState();
-                showToast(`+৳ ${POINTS_PER_AD} earned!`);
-            } else if (adRewardPending && !adWatchedSuccessfully) {
-                showToast("Ad not completed. No Taka awarded.");
-            }
-            adRewardPending = false;
-            adWatchedSuccessfully = false;
-        }
-
-        // Bonus channel handling (Links are now disabled)
-        function handleBonusLinkClick(event, buttonElement) {
-            const channelId = buttonElement.dataset.channelId;
-            const reward = parseInt(buttonElement.dataset.reward);
-            const link = buttonElement.href;
-            const isClaimed = currentUser.claimedBonuses.includes(channelId);
-
-            if (isClaimed) {
-                showToast("Bonus already claimed!");
-                return;
-            }
-
-            event.preventDefault();
-            
-            if (link && link !== '#' && link !== '') {
-                // Open in new tab for the user to join
-                window.open(link, '_blank');
-            } else {
-                 showToast("Channel Link is not active. Claiming after a brief wait.", 5000);
-            }
-
-
-            buttonElement.textContent = 'Verifying...';
-            buttonElement.disabled = true;
-
-            // Simulate the join/verification process
-            setTimeout(() => {
-                if (!currentUser.claimedBonuses.includes(channelId)) {
-                    currentUser.points += reward;
-                    currentUser.claimedBonuses.push(channelId);
-                    updateUI();
-                    saveUserState();
-                    buttonElement.textContent = 'Claimed';
-                    buttonElement.classList.add('claimed');
-                    showToast(`+৳ ${reward} bonus claimed!`);
-                } else {
-                     buttonElement.textContent = 'Claimed';
-                     buttonElement.classList.add('claimed');
-                }
-                buttonElement.disabled = false;
-            }, 7000);
-        }
-
-        // Withdrawal handling
-        function handleSubmitWithdrawal() {
-            const amount = parseInt(document.getElementById('withdrawAmountInput').value);
-            const method = document.getElementById('withdrawMethodSelect').value;
-            const account = document.getElementById('withdrawAccountInput').value.trim();
-            const statusMsg = document.getElementById('withdrawStatusMsg');
-            const currentReferrals = currentUser.referredUsers ? currentUser.referredUsers.length : 0;
-
-            statusMsg.className = 'status-message';
-            statusMsg.textContent = '';
-
-            if (currentReferrals < WITHDRAWAL_REFERRAL_COUNT) {
-                 statusMsg.textContent = `উওোলন করতে ১০ টা রেফার করতে হবে। আপনি আরও ${WITHDRAWAL_REFERRAL_COUNT - currentReferrals} জনকে রেফার করুন।`;
-                 statusMsg.classList.add('error-message');
-                 return;
-            }
-
-            if (isNaN(amount) || amount <= 0) {
-                statusMsg.textContent = "Please enter a valid amount.";
-                statusMsg.classList.add('error-message');
-                return;
-            }
-            if (amount < MIN_WITHDRAW_POINTS) {
-                statusMsg.textContent = `Minimum withdrawal is ৳ ${MIN_WITHDRAW_POINTS}.`;
-                statusMsg.classList.add('error-message');
-                return;
-            }
-            if (amount > currentUser.points) {
-                statusMsg.textContent = "You don't have enough Taka.";
-                statusMsg.classList.add('error-message');
-                return;
-            }
-            if (!method) {
-                statusMsg.textContent = "Please select a payment method (Bkash/Nagad).";
-                statusMsg.classList.add('error-message');
-                return;
-            }
-            if (!account || account.length < 10) {
-                statusMsg.textContent = "Please enter a valid account number.";
-                statusMsg.classList.add('error-message');
-                return;
-            }
-
-            const escapeMarkdown = (text) => {
-                // Escaping all characters required for MarkdownV2 except for the ones used for bold/italics
-                return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
-            };
-
-            const withdrawalDetails = `
-🔔 *𝗡𝗲𝘄 𝗪𝗶𝘁𝗵𝗱𝗿𝗮𝘄𝗮𝗹 𝗥𝗲𝗾𝘂𝗲𝘀𝘁 * 🔔
-------------------------------------
-🕵️ *𝗔𝗽𝗽 𝗡𝗮𝗺𝗲 :* \`${escapeMarkdown(APP_NAME)}\`
-👤 *𝗨𝘀𝗲𝗿 𝗡𝗮𝗺𝗲 :* \`${escapeMarkdown(currentUser.name)}\`
-💰 *𝗔𝗺𝗼𝘂𝗻𝘁 :* ৳ ${amount}
-💳 *𝗠𝗲𝘁𝗵𝗼𝗱 :* ${escapeMarkdown(method)}
-🏦 *𝗔𝗰𝗰𝗼𝘂𝗻𝘁 :* \`${escapeMarkdown(account)}\`
-------------------------------------
-📊 *Referrals :* ${currentReferrals}/${WITHDRAWAL_REFERRAL_COUNT}
-♎ 𝗠𝗮𝗶𝗻 𝗕𝗮𝗹𝗮𝗻𝗰𝗲 : ৳ ${currentUser.points - amount}
-👀 𝗧𝗼𝘁𝗮𝗹 𝗔𝗱𝘀 𝗪𝗮𝘁𝗰𝗵𝗲𝗱 : ${currentUser.totalAdsWatchedLifetime}
-------------------------------------
-⏰ *𝗪𝗶𝘁𝗵𝗱𝗿𝗿𝗮𝘄𝗮𝗹 𝗧𝗶𝗺𝗲 :* ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}
-            `;
-
-            sendToTelegram(withdrawalDetails);
-
-            currentUser.points -= amount;
-            updateUI();
-            saveUserState();
-
-            statusMsg.textContent = "Withdrawal request submitted successfully! Payment will be processed shortly.";
-            statusMsg.classList.add('success-message');
-            document.getElementById('withdrawAmountInput').value = "";
-            document.getElementById('withdrawMethodSelect').value = "";
-            document.getElementById('withdrawAccountInput').value = "";
-        }
-
-        // Telegram integration
-        function sendToTelegram(message) {
-            if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.includes("YOUR_TELEGRAM_BOT_TOKEN") || !TELEGRAM_CHAT_ID) {
-                console.warn("Telegram Bot not configured. Message not sent.");
-                return;
-            }
-
-            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    chat_id: TELEGRAM_CHAT_ID,
-                    text: message,
-                    parse_mode: 'MarkdownV2'
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (!data.ok) {
-                    console.warn('Telegram API error:', data.description);
-                    fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            chat_id: TELEGRAM_CHAT_ID,
-                            // Fallback to plain text if MarkdownV2 fails due to unescaped characters
-                            text: message.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '') 
-                        })
-                    }).then(res => res.json()).then(plainData => {
-                        if (!plainData.ok) {
-                            console.error('Plain text Telegram message failed:', plainData.description);
-                        }
-                    });
-                }
-            })
-            .catch(error => console.error('Error sending Telegram message:', error));
-        }
-
-        function sendTelegramReferralNotification(refereeName, refereeCode, referrerName, referrerCode) {
-            if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.includes("YOUR_TELEGRAM_BOT_TOKEN") || !TELEGRAM_CHAT_ID) {
-                console.warn("Telegram Bot for referral notification not configured. Notification not sent.");
-                return;
-            }
-
-            const escapeMarkdown = (text) => {
-                return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
-            };
-
-            const message = `
-🎉 *New Referral Bonus!* 🎉
-------------------------------------
-👥 *New User:* \`${escapeMarkdown(refereeName)}\` (Code: \`${escapeMarkdown(refereeCode)}\`)
-🌟 *Received:* ৳ ${REFERRAL_BONUS_REFEREE}
-Referral From:
-👤 *Referrer:* \`${escapeMarkdown(referrerName)}\` (Code: \`${escapeMarkdown(referrerCode)}\`)
-🌟 *Received:* ৳ ${REFERRAL_BONUS_REFERRER}
-------------------------------------
-⏰ *Timestamp:* ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}
-            `;
-
-            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    chat_id: TELEGRAM_CHAT_ID,
-                    text: message,
-                    parse_mode: 'MarkdownV2'
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (!data.ok) {
-                    console.warn('Telegram API error for referral notification:', data.description);
-                    fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            chat_id: TELEGRAM_CHAT_ID,
-                            text: message.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '')
-                        })
-                    });
-                }
-            })
-            .catch(error => console.error('Error sending referral Telegram message:', error));
-        }
-
-        // Save user state to localStorage
-        function saveUserState() {
-            const deviceId = localStorage.getItem('galaxyEarnDeviceId');
-            let allUsersData = JSON.parse(localStorage.getItem('galaxyEarnAllUsers')) || {};
-            allUsersData[deviceId] = currentUser;
-            localStorage.setItem('galaxyEarnAllUsers', JSON.stringify(allUsersData));
-        }
-    </script>
-
-<script src="/js/cookienotice.js" defer></script>
-<script>
-  document.addEventListener('DOMContentLoaded', function(event) {
-    window.cookieChoices && cookieChoices.showCookieConsentBar && cookieChoices.showCookieConsentBar(
-        (window.cookieOptions && cookieOptions.msg) || 'Den här webbplatsen använder cookies från Google för att tillhandahålla tjänster och analysera trafik. Din IP-adress och användaragent delas med Google tillsammans med information om prestanda och säkerhet för att garantera tjänstens kvalitet, generera användningsstatistik samt upptäcka och förhindra otillåten användning.',
-        (window.cookieOptions && cookieOptions.close) || 'OK',
-        (window.cookieOptions && cookieOptions.learn) || 'Läs mer',
-        (window.cookieOptions && cookieOptions.link) || 'https://www.blogger.com/go/blogspot-cookies');
-  });
-</script>
-
-</body>
-</html>
+                            <button class="copy-btn" id="
