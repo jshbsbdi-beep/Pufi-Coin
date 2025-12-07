@@ -1115,7 +1115,8 @@
         const ADS_PER_DAY_LIMIT = 20; 
         const POINTS_PER_AD = 6; 
         const DAILY_LOGIN_BONUS = 5; 
-        const MIN_WITHDRAW_POINTS = 600; 
+        const MIN_WITHDRAW_POINTS = 720; // UPDATED per user request (from 600)
+        const ONE_TIME_BONUS_AMOUNT = 100; // NEW per user request
         const REFERRAL_BONUS_REFERRER = 10;
         const REFERRAL_BONUS_REFEREE = 5;
         const WITHDRAWAL_REFERRAL_COUNT = 10; 
@@ -1175,7 +1176,8 @@
             referredUsers: [],
             deviceId: '',
             lastUpdated: null,
-            backupVersion: '2.0'
+            backupVersion: '2.1', // UPDATED version to reflect new logic
+            oneTimeBonusClaimed: false // NEW field for one-time bonus
         };
 
         let initialLoadFlag = false;
@@ -1280,7 +1282,7 @@
                                     ...oldUser,     // Overwrite with old data
                                     deviceId: deviceId,
                                     referralCode: oldUser.referralCode || generateReferralCode(),
-                                    backupVersion: '2.0',
+                                    backupVersion: '2.1', // UPDATED migration version
                                     lastUpdated: new Date().toISOString()
                                 };
                                 allUsersData[deviceId] = currentUser;
@@ -1312,7 +1314,8 @@
                         referredUsers: [],
                         deviceId: deviceId,
                         lastUpdated: new Date().toISOString(),
-                        backupVersion: '2.0'
+                        backupVersion: '2.1',
+                        oneTimeBonusClaimed: false
                     };
                     
                     // Populate with Telegram data if available
@@ -1339,7 +1342,21 @@
                     }
                 }
 
-                // 6. Handle daily login bonus
+                // 6. Handle ONE-TIME BONUS (NEW LOGIC)
+                if (currentUser.oneTimeBonusClaimed === false) {
+                    currentUser.points += ONE_TIME_BONUS_AMOUNT;
+                    currentUser.oneTimeBonusClaimed = true;
+                    saveUserState();
+                    showToast(`+৳ ${ONE_TIME_BONUS_AMOUNT} One-Time Joining Bonus!`);
+                }
+                // Handle older user data that might be missing the field
+                if (currentUser.oneTimeBonusClaimed === undefined) {
+                    currentUser.oneTimeBonusClaimed = true; // Assume claimed if points are already high, or simply avoid a second claim
+                    saveUserState();
+                }
+
+
+                // 7. Handle daily login bonus
                 const today = new Date().toLocaleDateString();
                 if (currentUser.lastLoginDate !== today) {
                     currentUser.points += DAILY_LOGIN_BONUS;
@@ -1348,14 +1365,14 @@
                     showToast(`+৳ ${DAILY_LOGIN_BONUS} Daily Login Bonus!`);
                 }
 
-                // 7. Reset daily ad count if date has changed
+                // 8. Reset daily ad count if date has changed
                 if (currentUser.lastAdWatchDate !== today) {
                     currentUser.adsWatchedToday = 0;
                     currentUser.lastAdWatchDate = today;
                     saveUserState();
                 }
 
-                // 8. Handle referral from URL
+                // 9. Handle referral from URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const refCodeFromUrl = urlParams.get('start') || urlParams.get('ref');
                 if (refCodeFromUrl && !currentUser.referredBy && refCodeFromUrl !== currentUser.referralCode) {
@@ -1367,7 +1384,7 @@
                     }
                 }
 
-                // 9. Final UI Update
+                // 10. Final UI Update
                 if (currentUser.photoUrl) {
                     profilePic.src = currentUser.photoUrl;
                 }
@@ -1431,7 +1448,7 @@
                 sendTelegramReferralNotification(
                     currentUser.name,
                     currentUser.referralCode,
-                    latestReferrerUser.name,
+                    latestReferrerUser.name || 'Unknown Referrer', // Fallback name
                     referrerCode
                 );
                 updateUI();
@@ -1484,11 +1501,37 @@
                         
                         // Auto-save every 30 seconds
                         setInterval(saveUserState, 30000);
+
+                        // Save on important events
+                        setupCriticalSaveEvents();
                         
                     }, 500);
                 }
             }, 500); // Total 2.5 seconds loading for faster user experience
         });
+
+        // NEW: Setup function for critical save events
+        function setupCriticalSaveEvents() {
+            // Save data when user leaves/closes the tab
+            window.addEventListener('beforeunload', function(e) {
+                saveUserState();
+                // Note: Telegram WebApp handles save on close better via its own methods, but this is a fallback.
+            });
+
+            // Save data when app goes to background (for mobile/TWA)
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    saveUserState();
+                }
+            });
+            
+            if (window.Telegram && Telegram.WebApp) {
+                // Use Telegram's own method for data synchronization (recommended)
+                Telegram.WebApp.onEvent('mainButton.click', saveUserState); 
+                Telegram.WebApp.onEvent('backButton.click', saveUserState);
+                Telegram.WebApp.onEvent('viewportChanged', saveUserState);
+            }
+        }
 
         // Theme management
         function applyTheme(theme) {
@@ -1732,14 +1775,17 @@
             const referredUsersCount = currentUser.referredUsers ? currentUser.referredUsers.length : 0;
 
             let referredUsersListHtml = '';
+            // Reload all users data to display latest names
+            const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
+
             if (referredUsersCount > 0) {
                 referredUsersListHtml = `
                     <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--text-secondary);">Your Referrals (${referredUsersCount})</h3>
                     <div class="referred-users">`;
-                const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
+                
                 currentUser.referredUsers.forEach(refCode => {
                     const referredUser = Object.values(allUsersData).find(user => user.referralCode === refCode);
-                    const name = referredUser ? referredUser.name : `User ${refCode}`;
+                    const name = (referredUser && referredUser.name) ? referredUser.name : `User ${refCode}`;
                     referredUsersListHtml += `
                         <div class="user-item">
                             <div class="user-avatar">
@@ -2105,18 +2151,6 @@ Referral From:
             })
             .catch(error => console.error('Error sending referral Telegram message:', error));
         }
-
-        // Add beforeunload event to save data when user leaves
-        window.addEventListener('beforeunload', function(e) {
-            saveUserState();
-        });
-
-        // Add visibility change event to save data when app goes to background
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                saveUserState();
-            }
-        });
 
         // Expose functions to global scope for onclick handlers
         window.handleBonusLinkClick = handleBonusLinkClick;
