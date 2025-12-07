@@ -9,6 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <script data-project-id="4724">
       !function(){
@@ -32,6 +35,7 @@
       }();
     </script>
     <style>
+        /* আপনার স্টাইল কোড এখানে থাকবে */
         :root {
             /* Muted Modern Theme Colors */
             --primary-color: #4A90E2; /* Blue */
@@ -1001,7 +1005,6 @@
     </style>
 </head>
 <body>
-    <!-- Enhanced Loading Page -->
     <div id="loadingPage">
         <div class="loading-brand">
             <div class="loading-logo">💸</div>
@@ -1029,13 +1032,11 @@
         </div>
     </div>
 
-    <!-- Data Save Notification -->
     <div class="data-save-notice" id="dataSaveNotice">
         <i class="fas fa-save"></i>
         <span>Data Saved</span>
     </div>
 
-    <!-- Main App Container -->
     <div class="app-container" style="display: none;">
         <div class="header">
             <button class="theme-toggle" id="themeToggle">
@@ -1075,8 +1076,7 @@
         </div>
 
         <div class="content-section" id="mainContent">
-            <!-- Dynamic content will be loaded here -->
-        </div>
+            </div>
 
         <div class="bottom-nav">
             <a href="#" class="nav-item active" data-page="home">
@@ -1114,7 +1114,9 @@
     </div>
 
     <script>
-        // Configuration
+        // =========================================================
+        // 1. CONFIGURATION AND FIREBASE SETUP
+        // =========================================================
         const APP_NAME = "𝖢𝖺𝗌𝗁 𝗆𝗈𝗇𝖾𝗒 💴";
         const ADS_PER_DAY_LIMIT = 20; 
         const POINTS_PER_AD = 6; 
@@ -1124,7 +1126,7 @@
         const REFERRAL_BONUS_REFEREE = 5;
         const WITHDRAWAL_REFERRAL_COUNT = 10; 
         const TELEGRAM_BOT_TOKEN = "7354534121:AAHssrmmk3zam5STFXWnOjNRqKyexOjXvmE"; 
-        const TELEGRAM_CHAT_ID = "-1002783990004"; 
+        const TELEGRAM_CHAT_ID = "-1002783990004"; // উইথড্রয়াল মেসেজ পাঠানোর জন্য
         const REFERRAL_BOT_LINK = "https://t.me/quick_earn_01_bot";
         const OFFICIAL_CHANNEL_LINK = "https://t.me/moneyhostes";
         
@@ -1132,15 +1134,42 @@
             { id: 'tg_official_channel', name: 'Official Channel (Task 1)', link: OFFICIAL_CHANNEL_LINK, reward: 15, icon: 'fab fa-telegram-plane' }
         ];
 
-        // Enhanced Data Storage Keys
-        const STORAGE_KEYS = {
-            ALL_USERS: 'cashMoneyAllUsers_v2',
-            DEVICE_ID: 'cashMoneyDeviceId_v2',
-            THEME: 'cashMoneyTheme_v2',
-            BACKUP: 'cashMoneyBackup_v2'
+        // Firebase Configuration (আপনার সরবরাহকৃত)
+        const firebaseConfig = {
+            apiKey: "AIzaSyASMBf-fL9tJOj2sgKdpVK77TYRMga1bag",
+            authDomain: "money-host-56ee9.firebaseapp.com",
+            databaseURL: "https://money-host-56ee9-default-rtdb.firebaseio.com",
+            projectId: "money-host-56ee9",
+            storageBucket: "money-host-56ee9.firebasestorage.app",
+            messagingSenderId: "701262930342",
+            appId: "1:701262930342:web:8d2269743f8aefc6ff2f67"
         };
 
-        // DOM Elements
+        // Initialize Firebase and get database reference
+        if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const database = typeof firebase !== 'undefined' ? firebase.database() : null;
+
+        // Current user state (Local state, synced with Firebase)
+        let currentUser = {
+            name: 'Loading...',
+            telegramId: null,
+            photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
+            points: 0,
+            adsWatchedToday: 0,
+            totalAdsWatchedLifetime: 0,
+            lastAdWatchDate: null,
+            lastLoginDate: null,
+            claimedBonuses: [],
+            referralCode: '',
+            referredBy: null,
+            referredUsers: [],
+            deviceId: '',
+            lastUpdated: null,
+        };
+
+        // DOM Elements (একই থাকবে)
         const loadingPage = document.getElementById('loadingPage');
         const loadingProgressBar = document.getElementById('loadingProgressBar');
         const appContainer = document.querySelector('.app-container');
@@ -1162,26 +1191,10 @@
         const toast = document.getElementById('toast');
         const dataSaveNotice = document.getElementById('dataSaveNotice');
 
-        // Current user state with enhanced backup
-        let currentUser = {
-            name: 'Loading...',
-            telegramId: null,
-            photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
-            points: 0,
-            adsWatchedToday: 0,
-            totalAdsWatchedLifetime: 0,
-            lastAdWatchDate: null,
-            lastLoginDate: null,
-            claimedBonuses: [],
-            referralCode: '',
-            referredBy: null,
-            referredUsers: [],
-            deviceId: '',
-            lastUpdated: null,
-            backupVersion: '2.0'
-        };
+        // =========================================================
+        // 2. HELPER FUNCTIONS
+        // =========================================================
 
-        // Show toast notification
         function showToast(message, duration = 3000) {
             toast.textContent = message;
             toast.classList.add('show');
@@ -1190,7 +1203,6 @@
             }, duration);
         }
 
-        // Show data save notification
         function showDataSaveNotice() {
             dataSaveNotice.classList.add('show');
             setTimeout(() => {
@@ -1198,14 +1210,12 @@
             }, 2000);
         }
 
-        // Enhanced Device ID generation with backup
         function generateDeviceId() {
             const timestamp = Date.now().toString(36);
             const random = Math.random().toString(36).substring(2, 15);
             return `cm_${timestamp}_${random}`.toUpperCase();
         }
 
-        // Enhanced Referral Code generation
         function generateReferralCode() {
             const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             let code = '';
@@ -1215,140 +1225,97 @@
             return code;
         }
 
-        // Enhanced Data Storage with backup system
-        function saveUserState() {
-            try {
-                const deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
-                if (!deviceId) return;
+        // =========================================================
+        // 3. FIREBASE INTEGRATION LOGIC (Data Persistence)
+        // =========================================================
 
-                let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
-                
-                // Update user data with timestamp
+        /**
+         * Firebase-এ ইউজার ডেটা সেভ (আপডেট) করে।
+         */
+        async function saveUserState() {
+            if (!database || !currentUser.telegramId) return false;
+
+            try {
                 currentUser.lastUpdated = new Date().toISOString();
-                currentUser.deviceId = deviceId;
                 
-                // Save to main storage
-                allUsersData[deviceId] = currentUser;
-                localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
+                // শুধুমাত্র প্রয়োজনীয় ডেটা সেভ করা
+                const dataToSave = { ...currentUser };
                 
-                // Create backup
-                const backup = {
-                    ...currentUser,
-                    backupTimestamp: new Date().toISOString()
-                };
-                localStorage.setItem(STORAGE_KEYS.BACKUP, JSON.stringify(backup));
+                const userRef = database.ref('users/' + currentUser.telegramId);
+
+                await userRef.update(dataToSave); 
                 
-                // Show save notification
                 showDataSaveNotice();
                 return true;
             } catch (error) {
-                console.error('Error saving user state:', error);
-                showToast('Error saving data');
+                console.error('Error saving user state to Firebase:', error);
+                showToast('Error saving data to server');
                 return false;
             }
         }
 
-        // Enhanced Data Loading with recovery system
-        function loadUserState() {
+        /**
+         * Firebase থেকে ইউজার ডেটা লোড করে।
+         */
+        async function loadUserState() {
+            if (!database) {
+                showToast("Firebase Error: Database not initialized.");
+                return false;
+            }
+            
             try {
-                // Try to get device ID or create new one
-                let deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
-                if (!deviceId) {
-                    deviceId = generateDeviceId();
-                    localStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+                // 1. Get Telegram ID for identification
+                let tgId = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user 
+                           ? Telegram.WebApp.initDataUnsafe.user.id 
+                           : localStorage.getItem('guestId') || generateDeviceId();
+
+                if (tgId.toString().startsWith('cm_') && !localStorage.getItem('guestId')) {
+                    localStorage.setItem('guestId', tgId); // If it's a generated ID, save it locally
                 }
 
-                // Load all users data
-                let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
+                const userRef = database.ref('users/' + tgId);
+                let snapshot = await userRef.once('value');
+                let userData = snapshot.val();
                 
-                // Check if user exists for this device
-                if (allUsersData[deviceId]) {
-                    currentUser = allUsersData[deviceId];
-                    
-                    // Check if user has Telegram data
-                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
-                        const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                        
-                        // Update Telegram data if available
-                        if (!currentUser.telegramId || currentUser.telegramId !== tgUser.id) {
-                            currentUser.telegramId = tgUser.id;
-                            currentUser.name = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || currentUser.name;
-                            currentUser.photoUrl = tgUser.photo_url || currentUser.photoUrl;
-                            saveUserState();
-                        }
-                    }
-                } else {
-                    // Create new user
-                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
-                        const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                        currentUser = {
-                            name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || `User${tgUser.id}`,
-                            telegramId: tgUser.id,
-                            photoUrl: tgUser.photo_url || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
-                            points: 0,
-                            adsWatchedToday: 0,
-                            totalAdsWatchedLifetime: 0,
-                            lastAdWatchDate: null,
-                            lastLoginDate: null,
-                            claimedBonuses: [],
-                            referralCode: generateReferralCode(),
-                            referredBy: null,
-                            referredUsers: [],
-                            deviceId: deviceId,
-                            lastUpdated: new Date().toISOString(),
-                            backupVersion: '2.0'
-                        };
-                    } else {
-                        currentUser = {
-                            name: 'Guest User',
-                            telegramId: null,
-                            photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
-                            points: 0,
-                            adsWatchedToday: 0,
-                            totalAdsWatchedLifetime: 0,
-                            lastAdWatchDate: null,
-                            lastLoginDate: null,
-                            claimedBonuses: [],
-                            referralCode: generateReferralCode(),
-                            referredBy: null,
-                            referredUsers: [],
-                            deviceId: deviceId,
-                            lastUpdated: new Date().toISOString(),
-                            backupVersion: '2.0'
-                        };
-                    }
-                    
-                    allUsersData[deviceId] = currentUser;
-                    localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
-                }
-
-                // Handle daily login bonus
                 const today = new Date().toLocaleDateString();
-                if (currentUser.lastLoginDate !== today) {
-                    currentUser.points += DAILY_LOGIN_BONUS;
-                    currentUser.lastLoginDate = today;
-                    saveUserState();
-                    showToast(`+৳ ${DAILY_LOGIN_BONUS} Daily Login Bonus!`);
-                }
 
-                // Reset daily ad count if date has changed
-                if (currentUser.lastAdWatchDate !== today) {
-                    currentUser.adsWatchedToday = 0;
+                if (userData) {
+                    currentUser = { ...currentUser, ...userData };
+                    
+                    // Check for daily reset
+                    if (currentUser.lastAdWatchDate !== today) {
+                        currentUser.adsWatchedToday = 0;
+                    }
+                    
+                    // Check for daily login bonus
+                    if (currentUser.lastLoginDate !== today) {
+                        currentUser.points += DAILY_LOGIN_BONUS;
+                        currentUser.lastLoginDate = today;
+                        await saveUserState();
+                        showToast(`+৳ ${DAILY_LOGIN_BONUS} Daily Login Bonus!`);
+                    }
+
+                } else {
+                    // New User Setup
+                    const tgUser = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user;
+                    currentUser.telegramId = tgId;
+                    currentUser.name = (tgUser ? `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || `User${tgId}` : 'Guest User');
+                    currentUser.photoUrl = (tgUser ? tgUser.photo_url : 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png');
+                    currentUser.referralCode = generateReferralCode();
+                    currentUser.deviceId = tgId; 
                     currentUser.lastAdWatchDate = today;
-                    saveUserState();
+                    currentUser.lastLoginDate = today;
+                    
+                    await saveUserState(); 
                 }
 
                 // Handle referral from URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const refCodeFromUrl = urlParams.get('start') || urlParams.get('ref');
                 if (refCodeFromUrl && !currentUser.referredBy && refCodeFromUrl !== currentUser.referralCode) {
-                    const referrerExists = Object.values(allUsersData).some(user => user.referralCode === refCodeFromUrl);
-                    if (referrerExists) {
-                        applyReferral(refCodeFromUrl);
-                    }
+                    await applyReferral(refCodeFromUrl);
                 }
 
-                // Update profile picture
                 if (currentUser.photoUrl) {
                     profilePic.src = currentUser.photoUrl;
                 }
@@ -1356,66 +1323,74 @@
                 updateUI();
                 return true;
             } catch (error) {
-                console.error('Error loading user state:', error);
-                
-                // Try to recover from backup
-                try {
-                    const backup = JSON.parse(localStorage.getItem(STORAGE_KEYS.BACKUP));
-                    if (backup) {
-                        currentUser = backup;
-                        updateUI();
-                        showToast('Data recovered from backup');
-                        return true;
-                    }
-                } catch (backupError) {
-                    console.error('Backup recovery failed:', backupError);
-                }
-                
-                showToast('Error loading data');
+                console.error('Error loading user state from Firebase:', error);
+                showToast('Error loading data from server. Please try again.');
                 return false;
             }
         }
-
-        // Apply referral code
-        function applyReferral(referrerCode) {
-            if (referrerCode === currentUser.referralCode || currentUser.referredBy) {
+        
+        /**
+         * রেফারেল কোড প্রয়োগ করে এবং উভয় ইউজারকে বোনাস দেয়।
+         */
+        async function applyReferral(referrerCode) {
+            if (!database || referrerCode === currentUser.referralCode || currentUser.referredBy) {
                 return;
             }
 
-            let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
-            const referrerUser = Object.values(allUsersData).find(user => user.referralCode === referrerCode);
+            // 1. Find the referrer using their code
+            const referrerQuery = database.ref('users').orderByChild('referralCode').equalTo(referrerCode).limitToFirst(1);
+            const referrerSnapshot = await referrerQuery.once('value');
+            
+            if (referrerSnapshot.exists()) {
+                const referrerId = Object.keys(referrerSnapshot.val())[0];
+                const referrerUser = referrerSnapshot.val()[referrerId];
 
-            if (referrerUser) {
+                // 2. Update current user (Referee) locally
                 currentUser.points += REFERRAL_BONUS_REFEREE;
                 currentUser.referredBy = referrerCode;
+                await saveUserState(); 
 
-                referrerUser.points += REFERRAL_BONUS_REFERRER;
-                if (referrerUser.referredUsers) {
-                    referrerUser.referredUsers.push(currentUser.referralCode);
-                } else {
-                    referrerUser.referredUsers = [currentUser.referralCode];
-                }
-
-                const referrerDeviceId = Object.keys(allUsersData).find(id => allUsersData[id].referralCode === referrerCode);
-                if (referrerDeviceId) {
-                    allUsersData[referrerDeviceId] = referrerUser;
-                }
-
-                localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
-                showToast(`+৳ ${REFERRAL_BONUS_REFEREE} bonus for joining via referral!`);
-                sendTelegramReferralNotification(
-                    currentUser.name,
-                    currentUser.referralCode,
-                    referrerUser.name,
-                    referrerCode
-                );
-                updateUI();
+                // 3. Update referrer using a Transaction (সুরক্ষার জন্য)
+                const referrerRef = database.ref('users/' + referrerId);
+                
+                referrerRef.transaction((currentData) => {
+                    if (currentData) {
+                        currentData.points = (currentData.points || 0) + REFERRAL_BONUS_REFERRER;
+                        currentData.referredUsers = currentData.referredUsers || [];
+                        if (!currentData.referredUsers.includes(currentUser.referralCode)) {
+                            currentData.referredUsers.push(currentUser.referralCode);
+                        }
+                    }
+                    return currentData;
+                }, (error, committed, snapshot) => {
+                    if (error) {
+                        console.error("Referrer update failed:", error);
+                        // Revert local changes if transaction fails
+                        currentUser.points -= REFERRAL_BONUS_REFEREE; 
+                        currentUser.referredBy = null;
+                        saveUserState();
+                        showToast("Referral Failed due to server error.");
+                    } else if (committed) {
+                        showToast(`+৳ ${REFERRAL_BONUS_REFEREE} bonus for joining via referral!`);
+                        sendTelegramReferralNotification(
+                            currentUser.name,
+                            currentUser.referralCode,
+                            referrerUser.name,
+                            referrerCode
+                        );
+                        updateUI();
+                    }
+                });
             }
         }
 
-        // Initialize the app with enhanced loading
+
+        // =========================================================
+        // 4. MAIN APP LOGIC (UI, Navigation, Events)
+        // =========================================================
+
         document.addEventListener('DOMContentLoaded', () => {
-            // Start loading progress
+            // Start loading progress (একই থাকবে)
             let progress = 0;
             const progressInterval = setInterval(() => {
                 progress += 20;
@@ -1424,28 +1399,23 @@
                 if (progress >= 100) {
                     clearInterval(progressInterval);
                     
-                    // Fade out loading page
                     loadingPage.style.opacity = '0';
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         loadingPage.style.display = 'none';
                         appContainer.style.display = 'block';
                         
-                        // Initialize Telegram WebApp
                         if (window.Telegram && Telegram.WebApp) {
                             Telegram.WebApp.expand();
                             Telegram.WebApp.enableClosingConfirmation();
                         }
                         
-                        // Load user data
-                        loadUserState();
-                        
-                        // Apply theme
-                        applyTheme(localStorage.getItem(STORAGE_KEYS.THEME) || 'light');
-                        
-                        // Navigate to home
+                        await loadUserState(); // Firebase থেকে ডেটা লোড
+
+                        // Theme এবং UI সেটআপ
+                        applyTheme(localStorage.getItem('cashMoneyTheme_v2') || 'light');
                         navigateTo('home');
                         
-                        // Set up event listeners
+                        // ইভেন্ট লিসেনার সেটআপ
                         themeToggleBtn.addEventListener('click', toggleTheme);
                         document.getElementById('editNameBtn').addEventListener('click', promptForNewName);
                         bottomNavItems.forEach(item => {
@@ -1462,21 +1432,19 @@
                         
                     }, 500);
                 }
-            }, 1000); // Total 5 seconds loading
+            }, 1000); 
         });
 
-        // Theme management
         function applyTheme(theme) {
             document.body.classList.toggle('dark-mode', theme === 'dark');
             themeToggleBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-            localStorage.setItem(STORAGE_KEYS.THEME, theme);
+            localStorage.setItem('cashMoneyTheme_v2', theme);
         }
 
         function toggleTheme() {
             applyTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
         }
 
-        // Update UI elements
         function updateUI() {
             profileNameDisplay.innerHTML = `
                 ${currentUser.name}
@@ -1486,7 +1454,6 @@
                 </button>
             `;
             
-            // Re-attach event listener
             const newEditBtn = document.getElementById('editNameBtn');
             if (newEditBtn) newEditBtn.addEventListener('click', promptForNewName);
 
@@ -1515,7 +1482,6 @@
             }
         }
 
-        // Navigation function
         function navigateTo(page) {
             const currentActiveNavItem = document.querySelector('.bottom-nav .nav-item.active');
             if (currentActiveNavItem) {
@@ -1536,7 +1502,10 @@
             updateUI();
         }
 
-        // Page renderers (same as before, but updated to use new storage system)
+        // =========================================================
+        // 5. PAGE RENDERERS
+        // =========================================================
+
         function renderHomePage() {
             mainContent.innerHTML = `
                 <div class="task-card">
@@ -1711,10 +1680,10 @@
                 referredUsersListHtml = `
                     <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--text-secondary);">Your Referrals (${referredUsersCount})</h3>
                     <div class="referred-users">`;
-                const allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
+                // Firebase থেকে সকল ইউজার ডেটা আনা কঠিন, তাই এখানে নাম দেখানোর লজিক সরল রাখা হলো।
                 currentUser.referredUsers.forEach(refCode => {
-                    const referredUser = Object.values(allUsersData).find(user => user.referralCode === refCode);
-                    const name = referredUser ? referredUser.name : `User ${refCode}`;
+                    // Note: Ideally, this should fetch names from Firebase. Since we don't have all users locally, we show the code.
+                    const name = `User ${refCode}`;
                     referredUsersListHtml += `
                         <div class="user-item">
                             <div class="user-avatar">
@@ -1795,8 +1764,11 @@
                 }
             });
         }
+        
+        // =========================================================
+        // 6. AD AND WITHDRAWAL HANDLERS
+        // =========================================================
 
-        // Ad handling
         let adWatchedSuccessfully = false;
         let adRewardPending = false;
         
@@ -1876,7 +1848,7 @@
             adModal.classList.add('show');
         }
 
-        function closeAdModalAndReward() {
+        async function closeAdModalAndReward() {
             adModal.classList.remove('show');
             if (adWatchedSuccessfully && adRewardPending) {
                 currentUser.points += POINTS_PER_AD;
@@ -1884,7 +1856,7 @@
                 currentUser.totalAdsWatchedLifetime++;
                 currentUser.lastAdWatchDate = new Date().toLocaleDateString();
                 updateUI();
-                saveUserState();
+                await saveUserState(); // সেভ করে দেয়া হলো
                 showToast(`+৳ ${POINTS_PER_AD} earned!`);
             } else if (adRewardPending && !adWatchedSuccessfully) {
                 showToast("Ad not completed. No Taka awarded.");
@@ -1893,7 +1865,6 @@
             adWatchedSuccessfully = false;
         }
 
-        // Bonus channel handling
         function handleBonusLinkClick(event, buttonElement) {
             const channelId = buttonElement.dataset.channelId;
             const reward = parseInt(buttonElement.dataset.reward);
@@ -1916,12 +1887,12 @@
             buttonElement.textContent = 'Verifying...';
             buttonElement.disabled = true;
 
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (!currentUser.claimedBonuses.includes(channelId)) {
                     currentUser.points += reward;
                     currentUser.claimedBonuses.push(channelId);
                     updateUI();
-                    saveUserState();
+                    await saveUserState(); // সেভ করে দেয়া হলো
                     buttonElement.textContent = 'Claimed';
                     buttonElement.classList.add('claimed');
                     showToast(`+৳ ${reward} bonus claimed!`);
@@ -1933,8 +1904,14 @@
             }, 7000);
         }
 
-        // Withdrawal handling
-        function handleSubmitWithdrawal() {
+        // উইথড্রয়াল ফাংশন, যা Firebase-এর 'withdraw_requests' নোডে সেভ করবে
+        async function handleSubmitWithdrawal() {
+            if (!database) {
+                document.getElementById('withdrawStatusMsg').textContent = "Server Error: Database not available.";
+                document.getElementById('withdrawStatusMsg').classList.add('error-message');
+                return;
+            }
+            
             const amount = parseInt(document.getElementById('withdrawAmountInput').value);
             const method = document.getElementById('withdrawMethodSelect').value;
             const account = document.getElementById('withdrawAccountInput').value.trim();
@@ -1976,31 +1953,51 @@
                 return;
             }
 
-            const escapeMarkdown = (text) => {
-                return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
+            const withdrawalData = {
+                telegramId: currentUser.telegramId,
+                name: currentUser.name,
+                amount: amount,
+                method: method,
+                account: account,
+                referrals: currentReferrals,
+                status: 'Pending', // এডমিন প্যানেল থেকে এটি পরিবর্তন করা হবে
+                timestamp: new Date().toISOString(),
+                telegramChatId: TELEGRAM_CHAT_ID, // যদি ম্যানুয়ালি টেলিগ্রাম মেসেজ পাঠাতে চান
             };
 
+            // 1. Save request to Firebase (Admin Panel/Firebase Console-এ দেখা যাবে)
+            try {
+                const newRequestRef = database.ref('withdraw_requests').push();
+                await newRequestRef.set(withdrawalData);
+            } catch (error) {
+                console.error("Firebase Withdrawal Save Error:", error);
+                statusMsg.textContent = "Server Error: Could not save request. Try again.";
+                statusMsg.classList.add('error-message');
+                return;
+            }
+
+            // 2. Send Telegram Notification (optional, but useful for quick admin alert)
+            const escapeMarkdown = (text) => text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
             const withdrawalDetails = `
-🔔 *𝗡𝗲𝘄 𝗪𝗶𝘁𝗵𝗱𝗿𝗮𝘄𝗮𝗹 𝗥𝗲𝗾𝘂𝗲𝘀𝘁 * 🔔
+🔔 *𝗡𝗲𝘄 𝗪𝗶𝘁𝗵𝗱𝗿𝗮𝘄𝗮𝗹 𝗥𝗲𝗾𝘂𝗲𝘀𝘁* 🔔
 ------------------------------------
-🕵️ *𝗔𝗽𝗽 𝗡𝗮𝗺𝗲 :* \`${escapeMarkdown(APP_NAME)}\`
-👤 *𝗨𝘀𝗲𝗿 𝗡𝗮𝗺𝗲 :* \`${escapeMarkdown(currentUser.name)}\`
+🕵️ *𝗨𝘀𝗲𝗿 𝗡𝗮𝗺𝗲 :* \`${escapeMarkdown(currentUser.name)}\`
+🆔 *𝗧𝗚 𝗜𝗗 :* \`${currentUser.telegramId}\`
 💰 *𝗔𝗺𝗼𝘂𝗻𝘁 :* ৳ ${amount}
 💳 *𝗠𝗲𝘁𝗵𝗼𝗱 :* ${escapeMarkdown(method)}
 🏦 *𝗔𝗰𝗰𝗼𝘂𝗻𝘁 :* \`${escapeMarkdown(account)}\`
 ------------------------------------
 📊 *Referrals :* ${currentReferrals}/${WITHDRAWAL_REFERRAL_COUNT}
-♎ 𝗠𝗮𝗶𝗻 𝗕𝗮𝗹𝗮𝗻𝗰𝗲 : ৳ ${currentUser.points - amount}
 👀 𝗧𝗼𝘁𝗮𝗹 𝗔𝗱𝘀 𝗪𝗮𝘁𝗰𝗵𝗲𝗱 : ${currentUser.totalAdsWatchedLifetime}
 ------------------------------------
-⏰ *𝗪𝗶𝘁𝗵𝗱𝗿𝗿𝗮𝘄𝗮𝗹 𝗧𝗶𝗺𝗲 :* ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}
+*🚨 𝗙𝗶𝗿𝗲𝗯𝗮𝘀𝗲 𝗣𝗮𝘁𝗵: withdraw\\_requests/${newRequestRef.key}*
             `;
-
             sendToTelegram(withdrawalDetails);
 
+            // 3. Deduct points and save user state
             currentUser.points -= amount;
             updateUI();
-            saveUserState();
+            await saveUserState();
 
             statusMsg.textContent = "Withdrawal request submitted successfully! Payment will be processed shortly.";
             statusMsg.classList.add('success-message');
@@ -2009,7 +2006,7 @@
             document.getElementById('withdrawAccountInput').value = "";
         }
 
-        // Telegram integration
+        // Telegram integration (Alerts)
         function sendToTelegram(message) {
             if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.includes("YOUR_TELEGRAM_BOT_TOKEN") || !TELEGRAM_CHAT_ID) {
                 console.warn("Telegram Bot not configured. Message not sent.");
@@ -2031,6 +2028,7 @@
             .then(response => response.json())
             .then(data => {
                 if (!data.ok) {
+                    // Try sending without Markdown if it fails
                     fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2049,9 +2047,7 @@
                 return;
             }
 
-            const escapeMarkdown = (text) => {
-                return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
-            };
+            const escapeMarkdown = (text) => text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
 
             const message = `
 🎉 *New Referral Bonus!* 🎉
@@ -2080,19 +2076,17 @@ Referral From:
             .catch(error => console.error('Error sending referral Telegram message:', error));
         }
 
-        // Add beforeunload event to save data when user leaves
+        // Save data when app is closed or hidden
         window.addEventListener('beforeunload', function(e) {
             saveUserState();
         });
 
-        // Add visibility change event to save data when app goes to background
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
                 saveUserState();
             }
         });
 
-        // Expose functions to global scope for onclick handlers
         window.handleBonusLinkClick = handleBonusLinkClick;
     </script>
 </body>
