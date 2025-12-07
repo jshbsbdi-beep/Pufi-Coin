@@ -1001,7 +1001,6 @@
     </style>
 </head>
 <body>
-    <!-- Enhanced Loading Page -->
     <div id="loadingPage">
         <div class="loading-brand">
             <div class="loading-logo">💸</div>
@@ -1029,13 +1028,11 @@
         </div>
     </div>
 
-    <!-- Data Save Notification -->
     <div class="data-save-notice" id="dataSaveNotice">
         <i class="fas fa-save"></i>
         <span>Data Saved</span>
     </div>
 
-    <!-- Main App Container -->
     <div class="app-container" style="display: none;">
         <div class="header">
             <button class="theme-toggle" id="themeToggle">
@@ -1075,8 +1072,7 @@
         </div>
 
         <div class="content-section" id="mainContent">
-            <!-- Dynamic content will be loaded here -->
-        </div>
+            </div>
 
         <div class="bottom-nav">
             <a href="#" class="nav-item active" data-page="home">
@@ -1137,7 +1133,8 @@
             ALL_USERS: 'cashMoneyAllUsers_v2',
             DEVICE_ID: 'cashMoneyDeviceId_v2',
             THEME: 'cashMoneyTheme_v2',
-            BACKUP: 'cashMoneyBackup_v2'
+            BACKUP: 'cashMoneyBackup_v2',
+            OLD_CURRENT_USER: 'currentUser' // Key for old, simple storage
         };
 
         // DOM Elements
@@ -1181,6 +1178,8 @@
             backupVersion: '2.0'
         };
 
+        let initialLoadFlag = false;
+
         // Show toast notification
         function showToast(message, duration = 3000) {
             toast.textContent = message;
@@ -1192,17 +1191,22 @@
 
         // Show data save notification
         function showDataSaveNotice() {
-            dataSaveNotice.classList.add('show');
-            setTimeout(() => {
-                dataSaveNotice.classList.remove('show');
-            }, 2000);
+            if (initialLoadFlag) { // Only show after initial load
+                dataSaveNotice.classList.add('show');
+                setTimeout(() => {
+                    dataSaveNotice.classList.remove('show');
+                }, 2000);
+            }
         }
 
         // Enhanced Device ID generation with backup
         function generateDeviceId() {
             const timestamp = Date.now().toString(36);
             const random = Math.random().toString(36).substring(2, 15);
-            return `cm_${timestamp}_${random}`.toUpperCase();
+            const newId = `cm_${timestamp}_${random}`.toUpperCase();
+            // Ensure the new ID is saved immediately
+            localStorage.setItem(STORAGE_KEYS.DEVICE_ID, newId);
+            return newId;
         }
 
         // Enhanced Referral Code generation
@@ -1248,81 +1252,94 @@
             }
         }
 
-        // Enhanced Data Loading with recovery system
+        // Enhanced Data Loading with recovery and migration system
         function loadUserState() {
             try {
-                // Try to get device ID or create new one
+                // 1. Get Device ID or create a new one
                 let deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
                 if (!deviceId) {
-                    deviceId = generateDeviceId();
-                    localStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+                    deviceId = generateDeviceId(); // generateDeviceId now saves it immediately
                 }
 
-                // Load all users data
                 let allUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
-                
-                // Check if user exists for this device
+                let userFound = false;
+
+                // 2. Check for existing user in ALL_USERS
                 if (allUsersData[deviceId]) {
                     currentUser = allUsersData[deviceId];
-                    
-                    // Check if user has Telegram data
-                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
-                        const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                        
-                        // Update Telegram data if available
-                        if (!currentUser.telegramId || currentUser.telegramId !== tgUser.id) {
-                            currentUser.telegramId = tgUser.id;
-                            currentUser.name = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || currentUser.name;
-                            currentUser.photoUrl = tgUser.photo_url || currentUser.photoUrl;
-                            saveUserState();
+                    userFound = true;
+                } else {
+                    // 3. ATTEMPT DATA MIGRATION from old simple storage (currentUser key)
+                    const oldUserDataRaw = localStorage.getItem(STORAGE_KEYS.OLD_CURRENT_USER);
+                    if (oldUserDataRaw) {
+                        try {
+                            const oldUser = JSON.parse(oldUserDataRaw);
+                            if (oldUser && oldUser.points !== undefined) {
+                                currentUser = {
+                                    ...currentUser, // Default structure
+                                    ...oldUser,     // Overwrite with old data
+                                    deviceId: deviceId,
+                                    referralCode: oldUser.referralCode || generateReferralCode(),
+                                    backupVersion: '2.0',
+                                    lastUpdated: new Date().toISOString()
+                                };
+                                allUsersData[deviceId] = currentUser;
+                                localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
+                                localStorage.removeItem(STORAGE_KEYS.OLD_CURRENT_USER); // Clean up old key
+                                userFound = true;
+                                showToast('Previous data successfully loaded and upgraded!', 5000);
+                            }
+                        } catch (e) {
+                            console.warn("Old data migration failed, starting fresh.", e);
                         }
                     }
-                } else {
-                    // Create new user
+                }
+                
+                // 4. Create new user if none found (New or migrated)
+                if (!userFound) {
+                    const defaultUser = {
+                        name: 'Guest User',
+                        telegramId: null,
+                        photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
+                        points: 0,
+                        adsWatchedToday: 0,
+                        totalAdsWatchedLifetime: 0,
+                        lastAdWatchDate: null,
+                        lastLoginDate: null,
+                        claimedBonuses: [],
+                        referralCode: generateReferralCode(),
+                        referredBy: null,
+                        referredUsers: [],
+                        deviceId: deviceId,
+                        lastUpdated: new Date().toISOString(),
+                        backupVersion: '2.0'
+                    };
+                    
+                    // Populate with Telegram data if available
                     if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
                         const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                        currentUser = {
-                            name: `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || `User${tgUser.id}`,
-                            telegramId: tgUser.id,
-                            photoUrl: tgUser.photo_url || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
-                            points: 0,
-                            adsWatchedToday: 0,
-                            totalAdsWatchedLifetime: 0,
-                            lastAdWatchDate: null,
-                            lastLoginDate: null,
-                            claimedBonuses: [],
-                            referralCode: generateReferralCode(),
-                            referredBy: null,
-                            referredUsers: [],
-                            deviceId: deviceId,
-                            lastUpdated: new Date().toISOString(),
-                            backupVersion: '2.0'
-                        };
-                    } else {
-                        currentUser = {
-                            name: 'Guest User',
-                            telegramId: null,
-                            photoUrl: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png',
-                            points: 0,
-                            adsWatchedToday: 0,
-                            totalAdsWatchedLifetime: 0,
-                            lastAdWatchDate: null,
-                            lastLoginDate: null,
-                            claimedBonuses: [],
-                            referralCode: generateReferralCode(),
-                            referredBy: null,
-                            referredUsers: [],
-                            deviceId: deviceId,
-                            lastUpdated: new Date().toISOString(),
-                            backupVersion: '2.0'
-                        };
+                        defaultUser.telegramId = tgUser.id;
+                        defaultUser.name = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || `User${tgUser.id}`;
+                        defaultUser.photoUrl = tgUser.photo_url || defaultUser.photoUrl;
                     }
-                    
+                    currentUser = defaultUser;
                     allUsersData[deviceId] = currentUser;
                     localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
                 }
 
-                // Handle daily login bonus
+
+                // 5. Update Telegram data if user data existed but was outdated
+                if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe.user) {
+                    const tgUser = Telegram.WebApp.initDataUnsafe.user;
+                    if (!currentUser.telegramId || currentUser.telegramId !== tgUser.id || !currentUser.photoUrl.startsWith('https://')) {
+                        currentUser.telegramId = tgUser.id;
+                        currentUser.name = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || currentUser.name;
+                        currentUser.photoUrl = tgUser.photo_url || currentUser.photoUrl;
+                        saveUserState();
+                    }
+                }
+
+                // 6. Handle daily login bonus
                 const today = new Date().toLocaleDateString();
                 if (currentUser.lastLoginDate !== today) {
                     currentUser.points += DAILY_LOGIN_BONUS;
@@ -1331,32 +1348,35 @@
                     showToast(`+৳ ${DAILY_LOGIN_BONUS} Daily Login Bonus!`);
                 }
 
-                // Reset daily ad count if date has changed
+                // 7. Reset daily ad count if date has changed
                 if (currentUser.lastAdWatchDate !== today) {
                     currentUser.adsWatchedToday = 0;
                     currentUser.lastAdWatchDate = today;
                     saveUserState();
                 }
 
-                // Handle referral from URL
+                // 8. Handle referral from URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const refCodeFromUrl = urlParams.get('start') || urlParams.get('ref');
                 if (refCodeFromUrl && !currentUser.referredBy && refCodeFromUrl !== currentUser.referralCode) {
-                    const referrerExists = Object.values(allUsersData).some(user => user.referralCode === refCodeFromUrl);
+                    // Reload allUsersData to check for referrer
+                    const latestAllUsersData = JSON.parse(localStorage.getItem(STORAGE_KEYS.ALL_USERS)) || {};
+                    const referrerExists = Object.values(latestAllUsersData).some(user => user.referralCode === refCodeFromUrl);
                     if (referrerExists) {
                         applyReferral(refCodeFromUrl);
                     }
                 }
 
-                // Update profile picture
+                // 9. Final UI Update
                 if (currentUser.photoUrl) {
                     profilePic.src = currentUser.photoUrl;
                 }
-
                 updateUI();
+                initialLoadFlag = true;
                 return true;
+
             } catch (error) {
-                console.error('Error loading user state:', error);
+                console.error('CRITICAL: Error loading user state:', error);
                 
                 // Try to recover from backup
                 try {
@@ -1364,14 +1384,16 @@
                     if (backup) {
                         currentUser = backup;
                         updateUI();
-                        showToast('Data recovered from backup');
+                        showToast('Data recovered from backup', 5000);
+                        initialLoadFlag = true;
                         return true;
                     }
                 } catch (backupError) {
                     console.error('Backup recovery failed:', backupError);
                 }
                 
-                showToast('Error loading data');
+                showToast('Error loading data! Restarting...', 5000);
+                initialLoadFlag = true;
                 return false;
             }
         }
@@ -1389,24 +1411,27 @@
                 currentUser.points += REFERRAL_BONUS_REFEREE;
                 currentUser.referredBy = referrerCode;
 
-                referrerUser.points += REFERRAL_BONUS_REFERRER;
-                if (referrerUser.referredUsers) {
-                    referrerUser.referredUsers.push(currentUser.referralCode);
-                } else {
-                    referrerUser.referredUsers = [currentUser.referralCode];
-                }
-
+                // Ensure referrerUser is the latest version from storage
                 const referrerDeviceId = Object.keys(allUsersData).find(id => allUsersData[id].referralCode === referrerCode);
-                if (referrerDeviceId) {
-                    allUsersData[referrerDeviceId] = referrerUser;
-                }
+                const latestReferrerUser = allUsersData[referrerDeviceId];
 
+                latestReferrerUser.points += REFERRAL_BONUS_REFERRER;
+                if (!latestReferrerUser.referredUsers) {
+                    latestReferrerUser.referredUsers = [];
+                }
+                // Only push if not already referred (to prevent duplicate entries from multiple loads)
+                if (!latestReferrerUser.referredUsers.includes(currentUser.referralCode)) {
+                    latestReferrerUser.referredUsers.push(currentUser.referralCode);
+                }
+                
+                allUsersData[referrerDeviceId] = latestReferrerUser;
                 localStorage.setItem(STORAGE_KEYS.ALL_USERS, JSON.stringify(allUsersData));
+                saveUserState(); // Save current user state as well
                 showToast(`+৳ ${REFERRAL_BONUS_REFEREE} bonus for joining via referral!`);
                 sendTelegramReferralNotification(
                     currentUser.name,
                     currentUser.referralCode,
-                    referrerUser.name,
+                    latestReferrerUser.name,
                     referrerCode
                 );
                 updateUI();
@@ -1462,7 +1487,7 @@
                         
                     }, 500);
                 }
-            }, 1000); // Total 5 seconds loading
+            }, 500); // Total 2.5 seconds loading for faster user experience
         });
 
         // Theme management
@@ -2031,12 +2056,13 @@
             .then(response => response.json())
             .then(data => {
                 if (!data.ok) {
+                    // Try sending without MarkdownV2 if the first attempt fails (common for escape issues)
                     fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             chat_id: TELEGRAM_CHAT_ID,
-                            text: message.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '') 
+                            text: message.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '') // Remove all markdown for plain text
                         })
                     });
                 }
@@ -2097,4 +2123,3 @@ Referral From:
     </script>
 </body>
 </html>
-
